@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gerador de Senhas</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #10131c;
+      color: #eef1f8;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      padding: 32px 16px;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(ellipse at top, #26304a 0, transparent 55%),
+        #10131c;
+    }
+
+    main {
+      width: min(100%, 620px);
+      padding: 32px;
+      border: 1px solid #343c50;
+      border-radius: 20px;
+      background: #191e2a;
+      box-shadow: 0 20px 70px #0006;
+    }
+
+    h1 { margin: 0 0 8px; font-size: 1.8rem; }
+    .intro, .hint { color: #aeb8cc; line-height: 1.5; }
+    .intro { margin: 0 0 24px; }
+
+    label, legend {
+      display: block;
+      margin: 16px 0 8px;
+      font-weight: 650;
+    }
+
+    input, textarea, button { font: inherit; border-radius: 10px; }
+
+    input[type="number"], input[type="password"], input[readonly], textarea {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid #424b61;
+      background: #10141e;
+      color: #eef1f8;
+    }
+
+    fieldset { margin: 20px 0; padding: 0; border: 0; }
+
+    .options {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+    }
+
+    .check {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin: 0;
+      padding: 10px 12px;
+      border: 1px solid #343c50;
+      border-radius: 10px;
+      color: #dce2ef;
+      font-weight: 500;
+    }
+
+    .check input { accent-color: #9b8cff; }
+
+    button {
+      min-height: 44px;
+      padding: 10px 16px;
+      border: 0;
+      background: #8d7aff;
+      color: #11121a;
+      font-weight: 750;
+      cursor: pointer;
+    }
+
+    button:hover { background: #a99cff; }
+    button.secondary { border: 1px solid #424b61; background: #252c3b; color: #eef1f8; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    .result { margin-top: 26px; }
+    .result label { margin-top: 18px; }
+    textarea { min-height: 112px; resize: vertical; overflow-wrap: anywhere; }
+    .hint { margin: 8px 0 0; font-size: .9rem; }
+    #status { min-height: 1.5em; margin-top: 14px; color: #b7f0cc; }
+
+    @media (max-width: 480px) {
+      main { padding: 22px 18px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Gerador de senhas</h1>
+    <p class="intro">Gere uma senha aleatória, veja a senha real e guarde uma cópia criptografada.</p>
+
+    <label for="length">Tamanho da senha</label>
+    <input id="length" type="number" min="4" max="128" value="20">
+
+    <fieldset>
+      <legend>Caracteres permitidos</legend>
+      <div class="options">
+        <label class="check"><input id="lowercase" type="checkbox" checked> Letras minúsculas</label>
+        <label class="check"><input id="uppercase" type="checkbox" checked> Letras maiúsculas</label>
+        <label class="check"><input id="numbers" type="checkbox" checked> Números</label>
+        <label class="check"><input id="symbols" type="checkbox" checked> Símbolos</label>
+      </div>
+    </fieldset>
+
+    <label for="secret">Frase secreta para criptografar</label>
+    <input id="secret" type="password" autocomplete="new-password" placeholder="Escolha uma frase secreta">
+    <p class="hint">Use uma frase secreta forte e guarde-a: ela será necessária para descriptografar.</p>
+
+    <div class="actions" style="margin-top: 18px">
+      <button id="generate" type="button">Gerar e criptografar</button>
+    </div>
+
+    <section class="result" aria-live="polite">
+      <label for="plain">Senha real gerada</label>
+      <input id="plain" type="text" readonly placeholder="Sua senha aparecerá aqui">
+      <div class="actions" style="margin-top: 10px">
+        <button id="copyPlain" class="secondary" type="button">Copiar senha real</button>
+      </div>
+
+      <label for="encrypted">Senha criptografada</label>
+      <textarea id="encrypted" readonly placeholder="O conteúdo criptografado aparecerá aqui"></textarea>
+      <div class="actions" style="margin-top: 10px">
+        <button id="copyEncrypted" class="secondary" type="button">Copiar texto criptografado</button>
+        <button id="decrypt" class="secondary" type="button">Descriptografar</button>
+      </div>
+      <p class="hint">O texto criptografado pode ser guardado; para recuperar a senha, use a mesma frase secreta neste site.</p>
+    </section>
+
+    <p id="status" role="status"></p>
+  </main>
+
+  <script>
+    const byId = (id) => document.getElementById(id);
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+
+    function randomInt(max) {
+      // Evita viés de módulo ao sortear um índice.
+      const limit = Math.floor(256 / max) * max;
+      const byte = new Uint8Array(1);
+      do {
+        crypto.getRandomValues(byte);
+      } while (byte[0] >= limit);
+      return byte[0] % max;
+    }
+
+    function secureShuffle(items) {
+      for (let i = items.length - 1; i > 0; i--) {
+        const j = randomInt(i + 1);
+        [items[i], items[j]] = [items[j], items[i]];
+      }
+      return items;
+    }
+
+    function makePassword(length) {
+      const groups = [];
+      if (byId("lowercase").checked) groups.push("abcdefghijklmnopqrstuvwxyz");
+      if (byId("uppercase").checked) groups.push("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+      if (byId("numbers").checked) groups.push("0123456789");
+      if (byId("symbols").checked) groups.push("!@#$%^&*()-_=+[]{};:,.?/");
+
+      if (groups.length === 0) throw new Error("Selecione pelo menos um tipo de caractere.");
+      if (length < groups.length) {
+        throw new Error("O tamanho precisa ser igual ou maior que a quantidade de opções selecionadas.");
+      }
+
+      const allCharacters = groups.join("");
+      const result = groups.map(group => group[randomInt(group.length)]);
+      while (result.length < length) result.push(allCharacters[randomInt(allCharacters.length)]);
+      return secureShuffle(result).join("");
+    }
+
+    function toBase64(bytes) {
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      return btoa(binary);
+    }
+
+    function fromBase64(value) {
+      const binary = atob(value);
+      return Uint8Array.from(binary, char => char.charCodeAt(0));
+    }
+
+    async function deriveKey(secret, salt) {
+      const material = await crypto.subtle.importKey(
+        "raw", encoder.encode(secret), "PBKDF2", false, ["deriveKey"]
+      );
+      return crypto.subtle.deriveKey(
+        { name: "PBKDF2", salt, iterations: 310000, hash: "SHA-256" },
+        material,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["encrypt", "decrypt"]
+      );
+    }
+
+    async function encryptText(text, secret) {
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const key = await deriveKey(secret, salt);
+      const ciphertext = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv }, key, encoder.encode(text)
+      );
+      return JSON.stringify({
+        version: 1,
+        algorithm: "AES-GCM",
+        kdf: "PBKDF2-SHA-256",
+        iterations: 310000,
+        salt: toBase64(salt),
+        iv: toBase64(iv),
+        ciphertext: toBase64(new Uint8Array(ciphertext))
+      });
+    }
+
+    async function decryptText(encryptedValue, secret) {
+      const data = JSON.parse(encryptedValue);
+      if (data.version !== 1 || data.algorithm !== "AES-GCM") {
+        throw new Error("Formato de texto criptografado não reconhecido.");
+      }
+      const salt = fromBase64(data.salt);
+      const iv = fromBase64(data.iv);
+      const ciphertext = fromBase64(data.ciphertext);
+      const key = await deriveKey(secret, salt);
+      const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+      return decoder.decode(plaintext);
+    }
+
+    byId("generate").addEventListener("click", async () => {
+      const status = byId("status");
+      status.textContent = "";
+      try {
+        if (!crypto.subtle) throw new Error("A criptografia não está disponível. Abra o site em HTTPS ou localhost.");
+        const secret = byId("secret").value;
+        if (secret.length < 8) throw new Error("Informe uma frase secreta com pelo menos 8 caracteres.");
+        const length = Number(byId("length").value);
+        if (!Number.isInteger(length) || length < 4 || length > 128) {
+          throw new Error("Escolha um tamanho entre 4 e 128 caracteres.");
+        }
+        const password = makePassword(length);
+        const encrypted = await encryptText(password, secret);
+        byId("plain").value = password;
+        byId("encrypted").value = encrypted;
+        status.textContent = "Senha gerada e criptografada neste navegador.";
+      } catch (error) {
+        status.textContent = error.message || "Não foi possível gerar a senha.";
+      }
+    });
+
+    byId("decrypt").addEventListener("click", async () => {
+      const status = byId("status");
+      status.textContent = "";
+      try {
+        if (!crypto.subtle) throw new Error("A criptografia não está disponível. Abra o site em HTTPS ou localhost.");
+        const secret = byId("secret").value;
+        if (!secret) throw new Error("Informe a frase secreta usada na criptografia.");
+        if (!byId("encrypted").value) throw new Error("Não há texto criptografado para descriptografar.");
+        byId("plain").value = await decryptText(byId("encrypted").value, secret);
+        status.textContent = "Senha descriptografada com sucesso.";
+      } catch {
+        status.textContent = "Não foi possível descriptografar. Confira a frase secreta e o texto criptografado.";
+      }
+    });
+
+    async function copyField(id) {
+      const value = byId(id).value;
+      if (!value) {
+        byId("status").textContent = "Não há conteúdo para copiar.";
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(value);
+        byId("status").textContent = "Copiado para a área de transferência.";
+      } catch {
+        byId("status").textContent = "Não foi possível copiar. Selecione e copie o texto manualmente.";
+      }
+    }
+
+    byId("copyPlain").addEventListener("click", () => copyField("plain"));
+    byId("copyEncrypted").addEventListener("click", () => copyField("encrypted"));
+  </script>
+</body>
+</html>
